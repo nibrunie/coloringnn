@@ -1,4 +1,5 @@
 import sys
+import argparse
 
 import os
 from os import listdir
@@ -43,72 +44,92 @@ def load_samples(dataset_path, resized_dim=(128, 128)):
 
     return sample_array
 
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description='coloring CNN')
+    parser.add_argument("--train", type=int, default=None,
+                       help="train network")
+    parser.add_argument("--reset-model", action="store_const", default=False,
+                        const=True,
+                       help="train network")
+    parser.add_argument("--eval-on-img", type=str, default=None,
+                       help="evaluate trained network on a specific image")
+    parser.add_argument("--dataset", type=str, default=None,
+                   help="train network")
 
-#dataset_path = os.path.join("dataset")
-sample_array = load_samples(sys.argv[1])
-print("len of sample array: {} elt(s)".format(len(sample_array)))
+    args = parser.parse_args()
 
-RESIZED_DIM = 128, 128
-GRAY_DIM = RESIZED_DIM + (1,)
-COLOR_DIM = RESIZED_DIM + (3,)
+    RESIZED_DIM = 128, 128
+    GRAY_DIM = RESIZED_DIM + (1,)
+    COLOR_DIM = RESIZED_DIM + (3,)
 
-if False:
-    inputs = keras.Input(shape=GRAY_DIM, name='gray_image')
-    x = layers.Conv2D(16, 3, activation='relu', name='conv2d_1')(inputs)
-    #x = layers.Conv2D(128, 3, activation='relu', name='conv2d_2')(x)
-    #x = layers.Conv2D(128, 3, activation='relu', name='conv2d_2')(x)
-    x = layers.AveragePooling2D(16, (4,4), name='avg_pool')(x)
-    x = layers.Conv2DTranspose(16, 5, name='conv2d_transpose')(x)
-    x = layers.UpSampling2D((4, 4), name='up_sampling')(x)
-    x = layers.Conv2D(3, 1, activation='relu', name='colored_image')(x)
-    input_duplicate = layers.Concatenate(name="input_repeat")([inputs, inputs, inputs])
-    #duplicate_reshape = layers.Reshape((128, 128, 3))(input_duplicate)
-    outputs = layers.Multiply()([x, input_duplicate])
-    outputs = layers.Conv2D(3, 1, activation='relu', name="conv2d_on_forward_inputs")(outputs)
-    outputs = layers.Add()([x, outputs])
-    outputs = layers.Conv2D(3, 1, activation='relu', name="final_conv2d")(outputs)
-    #outputs = layers.Dense(10, name='predictions')(x)
+    if args.dataset is None:
+        sample_array = []
+    else:
+        sample_array = load_samples(args.dataset)
+        print("len of sample array: {} elt(s)".format(len(sample_array)))
 
 
-    model = keras.Model(inputs=inputs, outputs=outputs)
+    if args.reset_model:
+        inputs = keras.Input(shape=GRAY_DIM, name='gray_image')
+        x = layers.Conv2D(16, 3, activation='relu', name='conv2d_1')(inputs)
+        #x = layers.Conv2D(128, 3, activation='relu', name='conv2d_2')(x)
+        #x = layers.Conv2D(128, 3, activation='relu', name='conv2d_2')(x)
+        x = layers.AveragePooling2D(16, (4,4), name='avg_pool')(x)
+        x = layers.Conv2DTranspose(16, 5, name='conv2d_transpose')(x)
+        x = layers.UpSampling2D((4, 4), name='up_sampling')(x)
+        x = layers.Conv2D(3, 1, activation='relu', name='colored_image')(x)
+        input_duplicate = layers.Concatenate(name="input_repeat")([inputs, inputs, inputs])
+        #duplicate_reshape = layers.Reshape((128, 128, 3))(input_duplicate)
+        outputs = layers.Multiply()([x, input_duplicate])
+        outputs = layers.Conv2D(3, 1, activation='relu', name="conv2d_on_forward_inputs")(outputs)
+        outputs = layers.Add()([x, outputs])
+        outputs = layers.Conv2D(3, 1, activation='relu', name="final_conv2d")(outputs)
+        #outputs = layers.Dense(10, name='predictions')(x)
 
-    # plotting model
-    keras.utils.plot_model(model, 'colouring_model.png', show_shapes=True)
 
-    model.compile(loss=keras.losses.MeanSquaredError(),
-                  optimizer=keras.optimizers.RMSprop())
+        model = keras.Model(inputs=inputs, outputs=outputs)
+
+        # plotting model
+        keras.utils.plot_model(model, 'colouring_model.png', show_shapes=True)
+
+        model.compile(loss=keras.losses.MeanSquaredError(),
+                      optimizer=keras.optimizers.RMSprop())
 
 
-    # TODO/FIXME using training sample as validation sample
-    test_scores = model.evaluate(x_train, y_train, verbose=2)
-    print('Test scores:', test_scores)
-else:
-    model = keras.models.load_model("colouring_model.model")
+        # TODO/FIXME using training sample as validation sample
+        test_scores = model.evaluate(x_train, y_train, verbose=2)
+        print('Test scores:', test_scores)
+    else:
+        model = keras.models.load_model("colouring_model.model")
 
-x_train = np.stack([gray_img.reshape(GRAY_DIM) for _, gray_img in sample_array])
-y_train = np.stack([colored_img for colored_img, _ in sample_array])
+    if not args.train is None and not args.dataset is None:
+        x_train = np.stack([gray_img.reshape(GRAY_DIM) for _, gray_img in sample_array])
+        y_train = np.stack([colored_img for colored_img, _ in sample_array])
 
-history = model.fit(x_train, y_train,
-                    batch_size=64,
-                    epochs=500,
-                    validation_split=0.2)
+        history = model.fit(x_train, y_train,
+                            batch_size=64,
+                            epochs=args.train,
+                            validation_split=0.2)
 
-keras.models.save_model(model, "colouring_model.model")
+    keras.models.save_model(model, "colouring_model.model")
 
-random_expected, random_input = random.choice(sample_array)
-model_prediction = model.predict(random_input.reshape((1,) + GRAY_DIM))
+    if not args.eval_on_img is None:
+        # random_expected, random_input = random.choice(sample_array)
+        color_img = cv2.imread(args.eval_on_img)
+        color_img = cv2.resize(color_img, (128, 128))
+        gray_img = cv2.cvtColor(color_img, cv2.COLOR_BGR2GRAY)
 
-print("prediction's shape: ", model_prediction.shape)
-predicted_image = model_prediction.reshape(COLOR_DIM)
-print("predicted_image's shape: ", predicted_image.shape)
-cv2.imwrite("random_input.png", random_input)
-cv2.imwrite("predicted_image.png", predicted_image)
-cv2.imwrite("random_expected.png", random_expected)
+        model_prediction = model.predict(gray_img.reshape((1,) + GRAY_DIM))
+        print("prediction's shape: ", model_prediction.shape)
+        predicted_image = model_prediction.reshape(COLOR_DIM)
+        print("predicted_image's shape: ", predicted_image.shape)
+        cv2.imwrite("random_input.png", gray_img)
+        cv2.imwrite("predicted_image.png", predicted_image)
+        cv2.imwrite("random_expected.png", color_img)
 
 # result visualisation
 #result_viz = cv2.vconcat([random_expected, predicted_image])
 # GUI
 # window_name = 'image'
 # cv2.imshow(window_name, result_viz)
-
 
