@@ -14,6 +14,8 @@ import cv2
 from tensorflow import keras
 from tensorflow.keras import layers
 
+from medium_model import generate_medium_model
+
 # loading images
 
 # Load an color image in grayscale
@@ -71,41 +73,6 @@ def generate_basic_model(GRAY_DIM=(128, 128)):
 
     return model
 
-def generate_medium_model(GRAY_DIM=(128, 128)):
-    """ generate a very basic coloring model which takes as input a
-        gray image and try to colorize it """
-    inputs = keras.Input(shape=GRAY_DIM, name='gray_image')
-    x = layers.Conv2D(64, 3, activation='relu', name='conv2d_1')(inputs)
-    conv2d_2 = layers.Conv2D(64, 3, activation='relu', name='conv2d_2')(x)
-    x = layers.MaxPool2D((2,2),name="maxpool_3")(conv2d_2)
-    x = layers.Conv2D(128, 3, activation='relu', name='conv2d_3')(x)
-    conv2d_4 = layers.Conv2D(128, 3, activation='relu', name='conv2d_4')(x)
-    x = layers.MaxPool2D((2,2),name="maxpool_1")(conv2d_4)
-    x = layers.Conv2D(256, 3, activation='relu', name='conv2d_5')(x)
-    x = layers.Conv2D(256, 3, activation='relu', name='conv2d_6')(x)
-    conv2d_7 = layers.Conv2D(256, 3, activation='relu', name='conv2d_7')(x)
-    x = layers.MaxPool2D((2,2),name="maxpool_3")(conv2d_7)
-    x = layers.Conv2D(512, 3, activation='relu', name='conv2d_8')(x)
-    x = layers.Conv2D(512, 3, activation='relu', name='conv2d_9')(x)
-    x = layers.Conv2D(512, 3, activation='relu', name='conv2d_10')(x)
-
-    x = layers.Conv2D(256, 1, activation="relu", name="conv2d_1x1")(x)
-    x = layers.Add()([x, conv2d_7])
-    x = layers.Conv2D(128, 3, activation="relu", name="conv2d_recons_2")(x)
-    x = layers.Add()([x, conv2d_4])
-    x = layers.Conv2D(64, 3, activation="relu", name="conv2d_recons_3")(x)
-    x = layers.Add()([x, conv2d_2])
-    x = layers.Conv2D(2, 3, activation="relu", name="conv2d_recons_3")(x)
-
-    outputs = x
-
-    model = keras.Model(inputs=inputs, outputs=outputs)
-
-    model.compile(loss=keras.losses.MeanSquaredError(),
-                  optimizer=keras.optimizers.RMSprop())
-
-    return model
-
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='coloring CNN')
     parser.add_argument("--train", type=int, default=None,
@@ -121,6 +88,9 @@ if __name__ == "__main__":
                    help="train network")
     parser.add_argument("--dataset-size", type=int, default=100,
                    help="size of the dataset subset to use during training")
+    parser.add_argument("--model-type", type=str, choices=["basic", "medium"],
+                   default="basic",
+                   help="define the type of CNN to use")
 
     args = parser.parse_args()
 
@@ -136,7 +106,13 @@ if __name__ == "__main__":
 
 
     if args.reset_model:
-        model = generate_basic_model(GRAY_DIM)
+        if args.model_type == "basic":
+            model = generate_basic_model(GRAY_DIM)
+        elif args.model_type == "medium":
+            model = generate_medium_model(GRAY_DIM)
+            assert args.model_path != "colouring_model.model", "model path as not been overloaded"
+        else:
+            raise NotImplementedError
 
     else:
         model = keras.models.load_model(args.model_path)
