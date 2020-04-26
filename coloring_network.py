@@ -1,5 +1,6 @@
 import sys
 import argparse
+from datetime import datetime
 
 import os
 from os import listdir
@@ -65,6 +66,42 @@ def generate_basic_model(GRAY_DIM=(128, 128)):
     model = keras.Model(inputs=inputs, outputs=outputs)
 
     model.compile(loss=keras.losses.MeanSquaredError(),
+                  metric=["cosine_similarity"],
+                  optimizer=keras.optimizers.RMSprop())
+
+    return model
+
+def generate_medium_model(GRAY_DIM=(128, 128)):
+    """ generate a very basic coloring model which takes as input a
+        gray image and try to colorize it """
+    inputs = keras.Input(shape=GRAY_DIM, name='gray_image')
+    x = layers.Conv2D(64, 3, activation='relu', name='conv2d_1')(inputs)
+    conv2d_2 = layers.Conv2D(64, 3, activation='relu', name='conv2d_2')(x)
+    x = layers.MaxPool2D((2,2),name="maxpool_3")(conv2d_2)
+    x = layers.Conv2D(128, 3, activation='relu', name='conv2d_3')(x)
+    conv2d_4 = layers.Conv2D(128, 3, activation='relu', name='conv2d_4')(x)
+    x = layers.MaxPool2D((2,2),name="maxpool_1")(conv2d_4)
+    x = layers.Conv2D(256, 3, activation='relu', name='conv2d_5')(x)
+    x = layers.Conv2D(256, 3, activation='relu', name='conv2d_6')(x)
+    conv2d_7 = layers.Conv2D(256, 3, activation='relu', name='conv2d_7')(x)
+    x = layers.MaxPool2D((2,2),name="maxpool_3")(conv2d_7)
+    x = layers.Conv2D(512, 3, activation='relu', name='conv2d_8')(x)
+    x = layers.Conv2D(512, 3, activation='relu', name='conv2d_9')(x)
+    x = layers.Conv2D(512, 3, activation='relu', name='conv2d_10')(x)
+
+    x = layers.Conv2D(256, 1, activation="relu", name="conv2d_1x1")(x)
+    x = layers.Add()([x, conv2d_7])
+    x = layers.Conv2D(128, 3, activation="relu", name="conv2d_recons_2")(x)
+    x = layers.Add()([x, conv2d_4])
+    x = layers.Conv2D(64, 3, activation="relu", name="conv2d_recons_3")(x)
+    x = layers.Add()([x, conv2d_2])
+    x = layers.Conv2D(2, 3, activation="relu", name="conv2d_recons_3")(x)
+
+    outputs = x
+
+    model = keras.Model(inputs=inputs, outputs=outputs)
+
+    model.compile(loss=keras.losses.MeanSquaredError(),
                   optimizer=keras.optimizers.RMSprop())
 
     return model
@@ -112,14 +149,21 @@ if __name__ == "__main__":
         x_train = np.stack([gray_img.reshape(GRAY_DIM) for _, gray_img in sample_array])
         y_train = np.stack([colored_img for colored_img, _ in sample_array])
 
+        # logging training
+        logdir="logs/fit/" + datetime.now().strftime("%Y%m%d-%H%M%S")
+        tensorboard_callback = keras.callbacks.TensorBoard(log_dir=logdir)
+
         history = model.fit(x_train, y_train,
                             batch_size=64,
                             epochs=args.train,
-                            validation_split=0.2)
+                            validation_split=0.05,
+                            callbacks=[tensorboard_callback])
 
         # TODO/FIXME using training sample as validation sample
         test_scores = model.evaluate(x_train, y_train, verbose=2)
         print('Test scores:', test_scores)
+
+    print(model.summary())
 
     keras.models.save_model(model, args.model_path)
 
