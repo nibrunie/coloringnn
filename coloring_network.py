@@ -44,6 +44,31 @@ def load_samples(dataset_path, resized_dim=(128, 128), size=100):
 
     return sample_array
 
+def generate_basic_model(GRAY_DIM=(128, 128)):
+    """ generate a very basic coloring model which takes as input a
+        gray image and try to colorize it """
+    inputs = keras.Input(shape=GRAY_DIM, name='gray_image')
+    x = layers.Conv2D(16, 3, activation='relu', name='conv2d_1')(inputs)
+    #x = layers.Conv2D(128, 3, activation='relu', name='conv2d_2')(x)
+    #x = layers.Conv2D(128, 3, activation='relu', name='conv2d_2')(x)
+    x = layers.AveragePooling2D(16, (4,4), name='avg_pool')(x)
+    x = layers.Conv2DTranspose(16, 5, name='conv2d_transpose')(x)
+    x = layers.UpSampling2D((4, 4), name='up_sampling')(x)
+    x = layers.Conv2D(3, 1, activation='relu', name='colored_image')(x)
+    input_duplicate = layers.Concatenate(name="input_repeat")([inputs, inputs, inputs])
+    #duplicate_reshape = layers.Reshape((128, 128, 3))(input_duplicate)
+    outputs = layers.Multiply()([x, input_duplicate])
+    outputs = layers.Conv2D(3, 1, activation='relu', name="conv2d_on_forward_inputs")(outputs)
+    outputs = layers.Add()([x, outputs])
+    outputs = layers.Conv2D(3, 1, activation='relu', name="final_conv2d")(outputs)
+    #outputs = layers.Dense(10, name='predictions')(x)
+    model = keras.Model(inputs=inputs, outputs=outputs)
+
+    model.compile(loss=keras.losses.MeanSquaredError(),
+                  optimizer=keras.optimizers.RMSprop())
+
+    return model
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='coloring CNN')
     parser.add_argument("--train", type=int, default=None,
@@ -74,29 +99,7 @@ if __name__ == "__main__":
 
 
     if args.reset_model:
-        inputs = keras.Input(shape=GRAY_DIM, name='gray_image')
-        x = layers.Conv2D(16, 3, activation='relu', name='conv2d_1')(inputs)
-        #x = layers.Conv2D(128, 3, activation='relu', name='conv2d_2')(x)
-        #x = layers.Conv2D(128, 3, activation='relu', name='conv2d_2')(x)
-        x = layers.AveragePooling2D(16, (4,4), name='avg_pool')(x)
-        x = layers.Conv2DTranspose(16, 5, name='conv2d_transpose')(x)
-        x = layers.UpSampling2D((4, 4), name='up_sampling')(x)
-        x = layers.Conv2D(3, 1, activation='relu', name='colored_image')(x)
-        input_duplicate = layers.Concatenate(name="input_repeat")([inputs, inputs, inputs])
-        #duplicate_reshape = layers.Reshape((128, 128, 3))(input_duplicate)
-        outputs = layers.Multiply()([x, input_duplicate])
-        outputs = layers.Conv2D(3, 1, activation='relu', name="conv2d_on_forward_inputs")(outputs)
-        outputs = layers.Add()([x, outputs])
-        outputs = layers.Conv2D(3, 1, activation='relu', name="final_conv2d")(outputs)
-        #outputs = layers.Dense(10, name='predictions')(x)
-
-
-        model = keras.Model(inputs=inputs, outputs=outputs)
-
-
-        model.compile(loss=keras.losses.MeanSquaredError(),
-                      optimizer=keras.optimizers.RMSprop())
-
+        model = generate_basic_model(GRAY_DIM)
 
     else:
         model = keras.models.load_model(args.model_path)
