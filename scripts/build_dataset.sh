@@ -1,6 +1,8 @@
 
 IFS=$(echo -en "\n\b")
 
+mkdir -p dataset/color/
+mkdir -p dataset/gray/
 # resize images
 for f in $(find $1 -iname *.jpg | head -n $2); do echo $f; convert "$f" -resize 128x128 dataset/color/`basename "$f"`; done
 
