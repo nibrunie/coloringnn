@@ -18,7 +18,7 @@ from tensorflow.keras import layers
 # Load an color image in grayscale
 # img = cv2.imread('messi5.jpg',0)
 
-def load_samples(dataset_path, resized_dim=(128, 128)):
+def load_samples(dataset_path, resized_dim=(128, 128), size=100):
     color_dataset_path = os.path.join(dataset_path, "color")
     gray_dataset_path = os.path.join(dataset_path, "gray")
 
@@ -29,7 +29,7 @@ def load_samples(dataset_path, resized_dim=(128, 128)):
 
     sample_array = []
 
-    for img_name in color_images:
+    for img_name in color_images[:size]:
         color_path = os.path.join(color_dataset_path, img_name)
         gray_path = os.path.join(gray_dataset_path, img_name)
         if isfile(color_path) and isfile(gray_path):
@@ -48,6 +48,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='coloring CNN')
     parser.add_argument("--train", type=int, default=None,
                        help="train network")
+    parser.add_argument("--model-path", default="colouring_model.model",
+                        help="path where the network model is loaded/saved")
     parser.add_argument("--reset-model", action="store_const", default=False,
                         const=True,
                        help="train network")
@@ -55,6 +57,8 @@ if __name__ == "__main__":
                        help="evaluate trained network on a specific image")
     parser.add_argument("--dataset", type=str, default=None,
                    help="train network")
+    parser.add_argument("--dataset-size", type=int, default=100,
+                   help="size of the dataset subset to use during training")
 
     args = parser.parse_args()
 
@@ -65,7 +69,7 @@ if __name__ == "__main__":
     if args.dataset is None:
         sample_array = []
     else:
-        sample_array = load_samples(args.dataset)
+        sample_array = load_samples(args.dataset, size=args.dataset_size)
         print("len of sample array: {} elt(s)".format(len(sample_array)))
 
 
@@ -89,18 +93,17 @@ if __name__ == "__main__":
 
         model = keras.Model(inputs=inputs, outputs=outputs)
 
-        # plotting model
-        keras.utils.plot_model(model, 'colouring_model.png', show_shapes=True)
 
         model.compile(loss=keras.losses.MeanSquaredError(),
                       optimizer=keras.optimizers.RMSprop())
 
 
-        # TODO/FIXME using training sample as validation sample
-        test_scores = model.evaluate(x_train, y_train, verbose=2)
-        print('Test scores:', test_scores)
     else:
-        model = keras.models.load_model("colouring_model.model")
+        model = keras.models.load_model(args.model_path)
+
+    # plotting model
+    # TODO/FIXME: error on graphviz/pydot import
+    keras.utils.plot_model(model, 'colouring_model.png', show_shapes=True)
 
     if not args.train is None and not args.dataset is None:
         x_train = np.stack([gray_img.reshape(GRAY_DIM) for _, gray_img in sample_array])
@@ -111,7 +114,11 @@ if __name__ == "__main__":
                             epochs=args.train,
                             validation_split=0.2)
 
-    keras.models.save_model(model, "colouring_model.model")
+        # TODO/FIXME using training sample as validation sample
+        test_scores = model.evaluate(x_train, y_train, verbose=2)
+        print('Test scores:', test_scores)
+
+    keras.models.save_model(model, args.model_path)
 
     if not args.eval_on_img is None:
         # random_expected, random_input = random.choice(sample_array)
