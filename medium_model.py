@@ -1,10 +1,10 @@
 from tensorflow import keras
 from tensorflow.keras import layers
 
-def generate_medium_model(GRAY_DIM=(128, 128)):
+def generate_medium_model(GRAY_DIM=(128, 128, 1)):
     """ generate a very basic coloring model which takes as input a
         gray image and try to colorize it """
-    inputs = keras.Input(shape=(GRAY_DIM + (1,)), name='gray_image')
+    inputs = keras.Input(shape=(GRAY_DIM), name='gray_image')
     x = layers.Conv2D(64, 3, activation='relu', padding='same', name='conv2d_1')(inputs)
     conv2d_2 = layers.Conv2D(64, 3, activation='relu', padding='same',name='conv2d_2')(x)
     x = layers.MaxPool2D((2,2),name="maxpool_1")(conv2d_2)
@@ -41,6 +41,6 @@ def generate_medium_model(GRAY_DIM=(128, 128)):
     return model
 
 
-model = generate_medium_model()
-print(model.summary())
-keras.utils.plot_model(model, 'medium_model.png', show_shapes=True)
+#model = generate_medium_model()
+#print(model.summary())
+#keras.utils.plot_model(model, 'medium_model.png', show_shapes=True)
