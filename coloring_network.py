@@ -13,6 +13,7 @@ import cv2
 
 from tensorflow import keras
 from tensorflow.keras import layers
+import tensorflow as tf
 
 from medium_model import generate_medium_model
 
@@ -81,7 +82,10 @@ if __name__ == "__main__":
                         help="path where the network model is loaded/saved")
     parser.add_argument("--reset-model", action="store_const", default=False,
                         const=True,
-                       help="train network")
+                       help="reset the network model")
+    parser.add_argument("--print-model-summary", action="store_const", default=False,
+                        const=True,
+                       help="print model summary")
     parser.add_argument("--eval-on-img", type=str, default=None,
                        help="evaluate trained network on a specific image")
     parser.add_argument("--dataset", type=str, default=None,
@@ -121,25 +125,53 @@ if __name__ == "__main__":
     # TODO/FIXME: error on graphviz/pydot import
     keras.utils.plot_model(model, 'colouring_model.png', show_shapes=True)
 
+
+
+    # preparing training samples (outside of train block to be able to
+    # inject them into the summary)
+    x_train = np.stack([gray_img.reshape(GRAY_DIM) for _, gray_img in sample_array])
+    y_train = np.stack([colored_img for colored_img, _ in sample_array])
     if not args.train is None and not args.dataset is None:
-        x_train = np.stack([gray_img.reshape(GRAY_DIM) for _, gray_img in sample_array])
-        y_train = np.stack([colored_img for colored_img, _ in sample_array])
 
         # logging training
         logdir="logs/fit/" + datetime.now().strftime("%Y%m%d-%H%M%S")
         tensorboard_callback = keras.callbacks.TensorBoard(log_dir=logdir)
 
+        # Sets up a timestamped log directory.
+        logdir = "logs/train_data/" + datetime.now().strftime("%Y%m%d-%H%M%S")
+        # Creates a file writer for the log directory.
+        file_writer = tf.summary.create_file_writer(logdir)
+        with file_writer.as_default():
+            tf.summary.image(" 25 traiing samples", x_train[0:25], max_outputs=25, step=0)
+
+        # validation logging
+        logdir_valid = "logs/valid_data/" + datetime.now().strftime("%Y%m%d-%H%M%S")
+        file_writer_valid = tf.summary.create_file_writer(logdir_valid)
+
+        # logging validation state
+        def log_valid_state(epoch, logs):
+            epoch_predictions = model.predict(x_train[0:25])
+
+            with file_writer_valid.as_default():
+                tf.summary.image("validation results", epoch_predictions[...,::-1], step=epoch)
+
+        valid_state_callback = keras.callbacks.LambdaCallback(on_epoch_end=log_valid_state)
+
         history = model.fit(x_train, y_train,
                             batch_size=64,
                             epochs=args.train,
                             validation_split=0.05,
-                            callbacks=[tensorboard_callback])
+                            # verbose=0,
+                            callbacks=[tensorboard_callback, valid_state_callback])
 
         # TODO/FIXME using training sample as validation sample
         test_scores = model.evaluate(x_train, y_train, verbose=2)
         print('Test scores:', test_scores)
 
-    print(model.summary())
+
+
+    if args.print_model_summary:
+        print(model.summary())
 
     keras.models.save_model(model, args.model_path)
 
@@ -149,13 +181,32 @@ if __name__ == "__main__":
         color_img = cv2.resize(color_img, (128, 128))
         gray_img = cv2.cvtColor(color_img, cv2.COLOR_BGR2GRAY)
 
-        model_prediction = model.predict(gray_img.reshape((1,) + GRAY_DIM))
-        print("prediction's shape: ", model_prediction.shape)
+        reshape_input = gray_img.reshape((1,) + GRAY_DIM)
+        model_prediction = model.predict(reshape_input)
+        print("prediction's shape: ", model_prediction.shape, model_prediction.dtype)
         predicted_image = model_prediction.reshape(COLOR_DIM)
-        print("predicted_image's shape: ", predicted_image.shape)
+        print("color_img's shape: ", color_img.shape, color_img.dtype)
+        print("predicted_image's shape: ", predicted_image.shape, predicted_image.dtype)
+        print("predicted_image's range", np.amax(predicted_image), np.amin(predicted_image))
+        predicted_image_u8 = predicted_image.astype('uint8')
+        print("predicted_image_u8's range", np.amax(predicted_image_u8), np.amin(predicted_image_u8))
         cv2.imwrite("random_input.png", gray_img)
         cv2.imwrite("predicted_image.png", predicted_image)
         cv2.imwrite("random_expected.png", color_img)
+
+        # evaluation logging
+        logdir_eval = "logs/eval_data/" + datetime.now().strftime("%Y%m%d-%H%M%S")
+        file_writer_eval = tf.summary.create_file_writer(logdir_eval)
+
+        ext_input = np.repeat(gray_img, 3).reshape(COLOR_DIM)
+        print("ext_input's shape: ", ext_input.shape, ext_input.dtype)
+
+        img_stack = np.stack([ext_input, color_img[...,::-1], predicted_image.astype('uint8')[...,::-1]])
+        print("img_stack's properties: ", img_stack.shape, img_stack.dtype, np.amax(img_stack), np.amin(img_stack))
+        img_stack = img_stack.astype('float32') / 255.0
+        print("img_stack's properties: ", img_stack.shape, img_stack.dtype, np.amax(img_stack), np.amin(img_stack))
+        with file_writer_eval.as_default():
+            tf.summary.image("evalatuion results", img_stack, step=0)
 
 # result visualisation
 #result_viz = cv2.vconcat([random_expected, predicted_image])
