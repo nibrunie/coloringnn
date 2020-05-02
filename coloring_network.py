@@ -90,6 +90,8 @@ if __name__ == "__main__":
                        help="evaluate trained network on a specific image")
     parser.add_argument("--dataset", type=str, default=None,
                    help="train network")
+    parser.add_argument("--shuffle-dataset", action="store_const", const=True, default=False,
+                   help="shuffle dataset before training")
     parser.add_argument("--dataset-size", type=int, default=100,
                    help="size of the dataset subset to use during training")
     parser.add_argument("--model-type", type=str, choices=["basic", "medium"],
@@ -126,6 +128,8 @@ if __name__ == "__main__":
     keras.utils.plot_model(model, 'colouring_model.png', show_shapes=True)
 
 
+    if args.shuffle_dataset:
+        random.shuffle(sample_array)
 
     # preparing training samples (outside of train block to be able to
     # inject them into the summary)
