@@ -190,6 +190,20 @@ if __name__ == "__main__":
         print("predicted_image's range", np.amax(predicted_image), np.amin(predicted_image))
         predicted_image_u8 = predicted_image.astype('uint8')
         print("predicted_image_u8's range", np.amax(predicted_image_u8), np.amin(predicted_image_u8))
+        print("predicted_image's shape: ", predicted_image.shape)
+
+        gray_img_3ch = cv2.cvtColor(gray_img, cv2.COLOR_GRAY2BGR)
+
+        concat_list = [
+            gray_img_3ch.astype('uint8'),
+            predicted_image.astype('uint8'),
+            color_img.astype('uint8'),
+        ]
+
+        overview = cv2.hconcat(concat_list)
+        cv2.imwrite("overview.png", overview)
+        # cv2.imshow("overview", overview)
+
         cv2.imwrite("random_input.png", gray_img)
         cv2.imwrite("predicted_image.png", predicted_image)
         cv2.imwrite("random_expected.png", color_img)
