@@ -155,9 +155,13 @@ if __name__ == "__main__":
         # logging validation state
         def log_valid_state(epoch, logs):
             epoch_predictions = model.predict(x_train[0:25])
+            # BGR to RGB
+            epoch_predictions = epoch_predictions[...,::-1]
+            # convert to float and scaling to [0, 1.0)
+            epoch_predictions = epoch_predictions.astype('float32') / 255.0
 
             with file_writer_valid.as_default():
-                tf.summary.image("validation results", epoch_predictions[...,::-1], step=epoch)
+                tf.summary.image("validation results", epoch_predictions, step=epoch)
 
         valid_state_callback = keras.callbacks.LambdaCallback(on_epoch_end=log_valid_state)
 
@@ -170,8 +174,7 @@ if __name__ == "__main__":
 
         # TODO/FIXME using training sample as validation sample
         test_scores = model.evaluate(x_train, y_train, verbose=2)
-        print('Test scores:', test_scores)
-
+        print('Test scores: ', test_scores)
 
 
     if args.print_model_summary:
