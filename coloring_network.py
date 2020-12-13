@@ -133,9 +133,9 @@ if __name__ == "__main__":
 
     # preparing training samples (outside of train block to be able to
     # inject them into the summary)
-    x_train = np.stack([gray_img.reshape(GRAY_DIM) for _, gray_img in sample_array])
-    y_train = np.stack([colored_img for colored_img, _ in sample_array])
     if not args.train is None and not args.dataset is None:
+        x_train = np.stack([gray_img.reshape(GRAY_DIM) for _, gray_img in sample_array])
+        y_train = np.stack([colored_img for colored_img, _ in sample_array])
 
         # logging training
         logdir="logs/fit/" + datetime.now().strftime("%Y%m%d-%H%M%S")
