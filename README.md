@@ -1,7 +1,8 @@
 # coloringnn
 CNN to color black and white pictures (Coloring convolutional Neural Network)
 
-=== Install
+## Install
+
 see `requirements.txt` for a dependency list
 
 To install python dependencies you can use `pip`
@@ -9,7 +10,7 @@ To install python dependencies you can use `pip`
 pip install -r requirements.txt
 ```
 
-=== Training
+## Training
 
 You can use the following command to prepare a dataset from a directory containing color images:
 ```
@@ -21,7 +22,7 @@ Then you can execute training on prepared dataset:
 python3 coloring_network.py --model-path <path to save/restore model> --dataset <dataset directory> --dataset-size 10000 --train 100 --shuffle-dataset
 ```
 
-=== Inference
+## Inference
 ```
 python3 coloring_network.py --model-path <path to .model to use> --eval-on-img <image under test>
 ```
