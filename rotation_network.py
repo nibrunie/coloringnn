@@ -13,6 +13,7 @@ import cv2
 
 from tensorflow import keras
 from tensorflow.keras import layers
+from tensorflow.keras.models import Sequential
 import tensorflow as tf
 
 
@@ -49,17 +50,34 @@ def load_samples(dataset_path, resized_dim=(128, 128), size=100):
 def generate_basic_model(IMG_DIM=(128, 128, 3)):
     """ generate a very basic coloring model which takes as input a
         gray image and try to colorize it """
-    inputs = keras.Input(shape=IMG_DIM, name='input_image')
-    x = layers.Conv2D(16, (3, 3), input_shape=IMG_DIM, activation='relu', name='conv2d_1')(inputs)
-    x = layers.AveragePooling2D(16, (4,4), name='avg_pool')(x)
-    x = layers.Conv2D(16, (3, 3), name='conv2d_transpose')(x)
-    x = layers.MaxPool2D((4, 4), name='max_pooling')(x)
-    x = layers.Conv2D(3, (4, 4), activation='relu', name='colored_image_lvl1')(x)
-    x = layers.Conv2D(1, (3, 3), activation='relu', name='colored_image_lvl2')(x)
-    # normalized_prob = layers.Normalization()(layers.Dense(4, action='relu')(x))
-    normalized_prob = layers.Dense(4)(x)
-    outputs = tf.keras.layers.Flatten()(normalized_prob)
-    model = keras.Model(inputs=inputs, outputs=outputs)
+    model = Sequential([
+        layers.Rescaling(1./255, input_shape=IMG_DIM),
+        layers.MaxPooling2D(),
+        layers.Conv2D(8, 3, padding='same', activation='relu'),
+        layers.MaxPooling2D(),
+        layers.Conv2D(16, 3, padding='same', activation='relu'),
+        layers.MaxPooling2D(),
+        layers.Conv2D(32, 3, padding='same', activation='relu'),
+        layers.MaxPooling2D(),
+        layers.Conv2D(32, 3, padding='same', activation='relu'),
+        layers.MaxPooling2D(),
+        layers.Conv2D(64, 3, padding='same', activation='relu'),
+        layers.MaxPooling2D(),
+        layers.Flatten(),
+        layers.Dense(32, activation='relu'),
+        layers.Dense(4)
+    ])
+    # inputs = keras.Input(shape=IMG_DIM, name='input_image')
+    # x = layers.Conv2D(16, (3, 3), input_shape=IMG_DIM, activation='relu', name='conv2d_1')(inputs)
+    # x = layers.AveragePooling2D(16, (4,4), name='avg_pool')(x)
+    # x = layers.Conv2D(16, (3, 3), name='conv2d_transpose')(x)
+    # x = layers.MaxPool2D((4, 4), name='max_pooling')(x)
+    # x = layers.Conv2D(3, (4, 4), activation='relu', name='colored_image_lvl1')(x)
+    # x = layers.Conv2D(1, (3, 3), activation='relu', name='colored_image_lvl2')(x)
+    # # normalized_prob = layers.Normalization()(layers.Dense(4, action='relu')(x))
+    # normalized_prob = layers.Dense(4)(x)
+    # outputs = tf.keras.layers.Flatten()(normalized_prob)
+    # model = keras.Model(inputs=inputs, outputs=outputs)
 
     model.compile(loss=keras.losses.SparseCategoricalCrossentropy(from_logits=True),
                   metrics=["accuracy"],
