@@ -67,6 +67,14 @@ if __name__ == "__main__":
         _, ext = os.path.splitext(f)
         return isfile(f) and ext in [".jpg", ".JPG"]
 
+    # checking existence of output directories
+    outDirColor = join(args.output, "color")
+    outDirGray  = join(args.output, " gray")
+    for reqDir in [outDirColor, outDirGray, args.input_dir]:
+        if not os.path.isdir(reqDir):
+            print(f"[ERROR] required directory {reqDir} not found")
+            raise FileNotFoundError
+
     expanded_img_candidates = glob(join(args.input_dir, "**", "*.JPG"), recursive=True) +  glob(join(args.input_dir, "**", "*.jpg"), recursive=True)
 
     input_images = [f for f in expanded_img_candidates if is_image_file(f)]
@@ -78,6 +86,7 @@ if __name__ == "__main__":
             img_path = basename(img_abspath)
             input_img = cv2.imread(img_abspath)
             resized_img = cv2.resize(input_img, args.resize)
+            print(f"generating for {img_path} with shape {resized_img.shape[0]}x{resized_img.shape[1]}")
             if args.augment:
                 extended_img_list = augment(resized_img)
             else:
@@ -89,8 +98,8 @@ if __name__ == "__main__":
                     prefix, suffix = os.path.splitext(img_path)
                     count = processed_imgs[img_path]
                     img_path = "{}-{}{}".format(prefix, count, suffix)
-                cv2.imwrite(join(args.output, "color", img_path), color_img)
-                cv2.imwrite(join(args.output, "gray", img_path), gray_img)
+                cv2.imwrite(join(outDirColor, img_path), color_img)
+                cv2.imwrite(join(outDirGray,  img_path), gray_img)
                 printProgressBar(index, subset_len, length=50)
                 processed_imgs[img_path] += 1
 

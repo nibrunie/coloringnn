@@ -69,7 +69,7 @@ def generate_basic_model(GRAY_DIM=(128, 128)):
     model = keras.Model(inputs=inputs, outputs=outputs)
 
     model.compile(loss=keras.losses.MeanSquaredError(),
-                  metric=["cosine_similarity"],
+                  metrics=["cosine_similarity"],
                   optimizer=keras.optimizers.RMSprop())
 
     return model
@@ -77,7 +77,7 @@ def generate_basic_model(GRAY_DIM=(128, 128)):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='coloring CNN')
     parser.add_argument("--train", type=int, default=None,
-                       help="train network")
+                       help="train network (expect epoch number)")
     parser.add_argument("--model-path", default="colouring_model.model",
                         help="path where the network model is loaded/saved")
     parser.add_argument("--reset-model", action="store_const", default=False,
