@@ -45,7 +45,6 @@ def load_samples(dataset_path, resized_dim=(128, 128), size=100):
 # data
 dataset_name = "oxford_flowers102"
 dataset_repetitions = 5
-num_epochs = 1  # train for at least 50 epochs for good results
 image_size = 64
 # KID = Kernel Inception Distance, see related section
 kid_image_size = 75
@@ -389,7 +388,7 @@ class DiffusionModel(keras.Model):
 
         return {m.name: m.result() for m in self.metrics}
 
-    def plot_images(self, epoch=None, logs=None, num_rows=3, num_cols=6):
+    def plot_images(self, epoch=None, logs=None, num_rows=3, num_cols=6, saveFile=None):
         # plot random generated images for visual evaluation of generation quality
         generated_images = self.generate(
             num_images=num_rows * num_cols,
@@ -404,7 +403,10 @@ class DiffusionModel(keras.Model):
                 plt.imshow(generated_images[index])
                 plt.axis("off")
         plt.tight_layout()
-        plt.show()
+        if saveFile:
+            plt.savefig(saveFile)
+        else:
+            plt.show()
         plt.close()
 
 
@@ -449,6 +451,8 @@ if __name__ == "__main__":
     parser.add_argument("--model-type", type=str, choices=["basic", "medium"],
                    default="basic",
                    help="define the type of CNN to use")
+    parser.add_argument("--plot-images", type=int, default=0,
+                   help="number of images to plot and save at the end of training")
 
     args = parser.parse_args()
 
@@ -462,21 +466,30 @@ if __name__ == "__main__":
         print("len of sample array: {} elt(s)".format(len(sample_array)))
 
 
-    if args.reset_model:
-        if args.model_type == "basic":
-            model = generate_basic_model(COLOR_DIM)
-        else:
-            raise NotImplementedError
-
+    if args.model_type == "basic":
+        model = generate_basic_model(COLOR_DIM)
     else:
-        model = keras.models.load_model(args.model_path)
+        raise NotImplementedError
+    if args.reset_model:
+        pass
+    else:
+        checkpoint_path = "checkpoints/diffusion_model"
+        checkpoint = tf.train.Checkpoint(model)
+        checkpoint.restore(checkpoint_path)
+        # model = keras.models.load_model(args.model_path)
 
 
+    # plotting model
+    # TODO/FIXME: error on graphviz/pydot import
+    # keras.utils.plot_model(model, 'diffusion_model.png', show_shapes=True)
 
     if args.shuffle_dataset:
         random.shuffle(sample_array)
 
-    sample_array = [preprocess_image(img) for img in sample_array]
+    # sample_array must have a length which is a multiple of the batch_size
+    rem_size = len(sample_array) % batch_size
+
+    sample_array = [preprocess_image(img) for img in sample_array[:-rem_size]]
 
     # preparing training samples (outside of train block to be able to
     # inject them into the summary)
@@ -486,6 +499,7 @@ if __name__ == "__main__":
         train_dataset = input_dataset[:-val_size]
         val_dataset   = input_dataset[-val_size:]
         print(f"len(val_dataset)={len(val_dataset)}")
+        print(f"len(train_dataset)={len(train_dataset)}")
 
         # save the best model based on the validation KID metric
         checkpoint_path = "checkpoints/diffusion_model"
@@ -504,30 +518,20 @@ if __name__ == "__main__":
         model.fit(
             train_dataset,
             batch_size=batch_size,
-            epochs=num_epochs,
+            epochs=args.train,
             validation_data=(val_dataset,),
             callbacks=[
-                keras.callbacks.LambdaCallback(on_epoch_end=model.plot_images),
+                # keras.callbacks.LambdaCallback(on_epoch_end=model.plot_images),
                 checkpoint_callback,
             ],
         )
-        # plotting model
-        # TODO/FIXME: error on graphviz/pydot import
-        keras.utils.plot_model(model, 'diffusion_model.png', show_shapes=True)
+        model.plot_images()
+        for i in range(args.plot_images):
+            model.plot_images(saveFile=f"hallucinated-landscape-{i}.jpg")
 
 
     if args.print_model_summary:
         print(model.summary())
 
-    keras.models.save_model(model, args.model_path)
-
     if not args.eval_on_img is None:
-        # # random_expected, random_input = random.choice(sample_array)
-        # color_img = cv2.imread(args.eval_on_img)
-        # color_img = cv2.resize(color_img, (128, 128))
-        # # image must be layed down in a batch-1 4D array
-        # reshape_input = color_img.reshape((1,) + COLOR_DIM)
-
-        # load the best model and generate images
-        model.load_weights(checkpoint_path)
-        model.plot_images()
+        pass
