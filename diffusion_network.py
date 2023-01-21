@@ -43,9 +43,7 @@ def load_samples(dataset_path, resized_dim=(128, 128), size=100):
 
 # Hyperparameters
 # data
-dataset_name = "oxford_flowers102"
 dataset_repetitions = 5
-image_size = 64
 # KID = Kernel Inception Distance, see related section
 kid_image_size = 75
 kid_diffusion_steps = 5
@@ -61,13 +59,14 @@ embedding_max_frequency = 1000.0
 widths = [32, 64, 96, 128]
 block_depth = 2
 
-# optimization
-batch_size = 64
-ema = 0.999
-learning_rate = 1e-3
-weight_decay = 1e-4
+class HyperParameters:
+    # optimization
+    batch_size = 64
+    ema = 0.999
+    learning_rate = 1e-3
+    weight_decay = 1e-4
 
-def preprocess_image(data):
+def preprocess_image(data, image_size):
     # center crop image
     height = tf.shape(data)[0]
     width = tf.shape(data)[1]
@@ -82,11 +81,11 @@ def preprocess_image(data):
 
     # resize and clip
     # for image downsampling it is important to turn on antialiasing
-    image = tf.image.resize(image, size=[image_size, image_size], antialias=True)
+    image = tf.image.resize(image, size=image_size, antialias=True)
     return tf.clip_by_value(image / 255.0, 0.0, 1.0)
 
 class KID(keras.metrics.Metric):
-    def __init__(self, name, **kwargs):
+    def __init__(self, name, image_size, **kwargs):
         super().__init__(name=name, **kwargs)
 
         # KID is estimated per batch and is averaged across batches
@@ -233,6 +232,7 @@ class DiffusionModel(keras.Model):
     def __init__(self, image_size, widths, block_depth):
         super().__init__()
 
+        self.image_size = image_size
         self.normalizer = layers.Normalization()
         self.network = get_network(image_size, widths, block_depth)
         self.ema_network = keras.models.clone_model(self.network)
@@ -242,7 +242,7 @@ class DiffusionModel(keras.Model):
 
         self.noise_loss_tracker = keras.metrics.Mean(name="n_loss")
         self.image_loss_tracker = keras.metrics.Mean(name="i_loss")
-        self.kid = KID(name="kid")
+        self.kid = KID("kid", self.image_size)
 
     @property
     def metrics(self):
@@ -314,7 +314,7 @@ class DiffusionModel(keras.Model):
 
     def generate(self, num_images, diffusion_steps):
         # noise -> images -> denormalized images
-        initial_noise = tf.random.normal(shape=(num_images, image_size, image_size, 3))
+        initial_noise = tf.random.normal(shape=(num_images, self.image_size, self.image_size, 3))
         generated_images = self.reverse_diffusion(initial_noise, diffusion_steps)
         generated_images = self.denormalize(generated_images)
         return generated_images
@@ -322,11 +322,11 @@ class DiffusionModel(keras.Model):
     def train_step(self, images):
         # normalize images to have standard deviation of 1, like the noises
         images = self.normalizer(images, training=True)
-        noises = tf.random.normal(shape=(batch_size, image_size, image_size, 3))
+        noises = tf.random.normal(shape=(HyperParameters.batch_size, self.image_size, self.image_size, 3))
 
         # sample uniform random diffusion times
         diffusion_times = tf.random.uniform(
-            shape=(batch_size, 1, 1, 1), minval=0.0, maxval=1.0
+            shape=(HyperParameters.batch_size, 1, 1, 1), minval=0.0, maxval=1.0
         )
         noise_rates, signal_rates = self.diffusion_schedule(diffusion_times)
         # mix the images with noises accordingly
@@ -349,7 +349,7 @@ class DiffusionModel(keras.Model):
 
         # track the exponential moving averages of weights
         for weight, ema_weight in zip(self.network.weights, self.ema_network.weights):
-            ema_weight.assign(ema * ema_weight + (1 - ema) * weight)
+            ema_weight.assign(HyperParameters.ema * ema_weight + (1 - HyperParameters.ema) * weight)
 
         # KID is not measured during the training phase for computational efficiency
         return {m.name: m.result() for m in self.metrics[:-1]}
@@ -357,11 +357,11 @@ class DiffusionModel(keras.Model):
     def test_step(self, images):
         # normalize images to have standard deviation of 1, like the noises
         images = self.normalizer(images, training=False)
-        noises = tf.random.normal(shape=(batch_size, image_size, image_size, 3))
+        noises = tf.random.normal(shape=(HyperParameters.batch_size, self.image_size, self.image_size, 3))
 
         # sample uniform random diffusion times
         diffusion_times = tf.random.uniform(
-            shape=(batch_size, 1, 1, 1), minval=0.0, maxval=1.0
+            shape=(HyperParameters.batch_size, 1, 1, 1), minval=0.0, maxval=1.0
         )
         noise_rates, signal_rates = self.diffusion_schedule(diffusion_times)
         # mix the images with noises accordingly
@@ -382,7 +382,7 @@ class DiffusionModel(keras.Model):
         # this is computationally demanding, kid_diffusion_steps has to be small
         images = self.denormalize(images)
         generated_images = self.generate(
-            num_images=batch_size, diffusion_steps=kid_diffusion_steps
+            num_images=HyperParameters.batch_size, diffusion_steps=kid_diffusion_steps
         )
         self.kid.update_state(images, generated_images)
 
@@ -413,6 +413,8 @@ class DiffusionModel(keras.Model):
 
 def generate_basic_model(IMG_DIM=(128, 128, 3)):
     # create and compile the model
+    image_size = IMG_DIM[0]
+    assert IMG_DIM[0] == IMG_DIM[1], "only square images are supported"
     model = DiffusionModel(image_size, widths, block_depth)
     # below tensorflow 2.9:
     # pip install tensorflow_addons
@@ -420,7 +422,7 @@ def generate_basic_model(IMG_DIM=(128, 128, 3)):
     # optimizer=tfa.optimizers.AdamW
     model.compile(
         optimizer=keras.optimizers.experimental.AdamW(
-            learning_rate=learning_rate, weight_decay=weight_decay
+            learning_rate=HyperParameters.learning_rate, weight_decay=HyperParameters.weight_decay
         ),
         loss=keras.losses.mean_absolute_error,
     )
@@ -438,10 +440,7 @@ if __name__ == "__main__":
                         const=True,
                        help="reset the network model")
     parser.add_argument("--print-model-summary", action="store_const", default=False,
-                        const=True,
-                       help="print model summary")
-    parser.add_argument("--eval-on-img", type=str, default=None,
-                       help="evaluate trained network on a specific image")
+                        const=True, help="print model summary")
     parser.add_argument("--dataset", type=str, default=None,
                    help="train network")
     parser.add_argument("--shuffle-dataset", action="store_const", const=True, default=False,
@@ -470,6 +469,7 @@ if __name__ == "__main__":
         model = generate_basic_model(COLOR_DIM)
     else:
         raise NotImplementedError
+
     if args.reset_model:
         pass
     else:
@@ -487,14 +487,14 @@ if __name__ == "__main__":
         random.shuffle(sample_array)
 
     # sample_array must have a length which is a multiple of the batch_size
-    rem_size = len(sample_array) % batch_size
+    rem_size = len(sample_array) % HyperParameters.batch_size
 
-    sample_array = [preprocess_image(img) for img in sample_array[:-rem_size]]
+    sample_array = [preprocess_image(img, RESIZED_DIM) for img in sample_array[:-rem_size]]
 
     # preparing training samples (outside of train block to be able to
     # inject them into the summary)
     if not args.train is None and not args.dataset is None:
-        val_size = batch_size
+        val_size = HyperParameters.batch_size
         input_dataset = np.stack([img for img in sample_array])
         train_dataset = input_dataset[:-val_size]
         val_dataset   = input_dataset[-val_size:]
@@ -517,7 +517,7 @@ if __name__ == "__main__":
         # run training and plot generated images periodically
         model.fit(
             train_dataset,
-            batch_size=batch_size,
+            batch_size=HyperParameters.batch_size,
             epochs=args.train,
             validation_data=(val_dataset,),
             callbacks=[
@@ -532,6 +532,3 @@ if __name__ == "__main__":
 
     if args.print_model_summary:
         print(model.summary())
-
-    if not args.eval_on_img is None:
-        pass
