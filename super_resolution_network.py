@@ -45,17 +45,33 @@ def load_dataset(dataset_path, resized_dim=(128, 128), super_size=(256, 256), si
 
     return sample_array
 
+def generate_super_reso_model(upscale_factor=4, channels=1):
+    # copied from https://keras.io/examples/vision/super_resolution_sub_pixel/
+    conv_args = {
+        "activation": "relu",
+        "kernel_initializer": "Orthogonal",
+        "padding": "same",
+    }
+    inputs = keras.Input(shape=(None, None, channels))
+    x = layers.Conv2D(64, 5, **conv_args)(inputs)
+    x = layers.Conv2D(64, 3, **conv_args)(x)
+    x = layers.Conv2D(32, 3, **conv_args)(x)
+    x = layers.Conv2D(channels * (upscale_factor ** 2), 3, **conv_args)(x)
+    outputs = tf.nn.depth_to_space(x, upscale_factor)
+
+    return keras.Model(inputs, outputs)
+
 def generate_super_reso_basic_model(INPUT_DIM=(64, 64), SUPER_DIM=(512, 512)):
     """ generate a very basic super-resolution model which takes as input a
         small image and try to extend it to a larger version without loosing details """
     upLevels = int(math.log2(SUPER_DIM[0] / INPUT_DIM[0]))
     print(f"{upLevels} level(s) of up-sampling required")
     inputs = keras.Input(shape=INPUT_DIM + (3,), name='small_image')
-    x = layers.Conv2D(16, 3, activation='relu', name='conv2d_1')(inputs)
-    x = layers.AveragePooling2D(16, (4,4), name='avg_pool')(x)
+    init_x = layers.Conv2D(16, 3, activation='relu', name='conv2d_1')(inputs)
+    x = layers.AveragePooling2D(16, (4,4), name='avg_pool')(init_x)
     x = layers.Conv2DTranspose(16, 5, name='conv2d_transpose')(x)
     x = layers.UpSampling2D((4, 4), name='up_sampling')(x)
-    x = layers.Conv2D(3, 1, activation='relu', name='colored_image')(x)
+    x = layers.Conv2D(16, 1, activation='relu', name='colored_image')(x)
     for i in range(upLevels):
         x = layers.UpSampling2D((2, 2), name=f'up-sampling-{i}')(x)
     outputs = x
@@ -64,9 +80,6 @@ def generate_super_reso_basic_model(INPUT_DIM=(64, 64), SUPER_DIM=(512, 512)):
     outputs = layers.Conv2D(3, 1, activation='relu', name="final_conv2d")(outputs)
     model = keras.Model(inputs=inputs, outputs=outputs)
 
-    model.compile(loss=keras.losses.MeanSquaredError(),
-                  metrics=["cosine_similarity"],
-                  optimizer=keras.optimizers.RMSprop())
 
     return model
 
@@ -84,8 +97,12 @@ if __name__ == "__main__":
                        help="print model summary")
     parser.add_argument("--eval-on-img", type=str, default=None,
                        help="evaluate trained network on a specific image")
+    parser.add_argument("--eval-output", type=str, default="final-eval",
+                       help="output filename for prediction on evaluation image")
     parser.add_argument("--dataset", type=str, default=None,
                    help="train network")
+    parser.add_argument("--batch-size", type=int, default=16,
+                   help="batch size used during training")
     parser.add_argument("--dataset-size", type=int, default=100,
                    help="size of the dataset subset to use during training")
     parser.add_argument("--shuffle-dataset", action="store_const", const=True, default=False,
@@ -96,7 +113,7 @@ if __name__ == "__main__":
     parser.add_argument("--super-size",
                         type=(lambda s: tuple(map(int, s.split(',')))), default=(256, 256),
                         help="dataset output dimension (super size)")
-    parser.add_argument("--model-type", type=str, choices=["basic", "medium"],
+    parser.add_argument("--model-type", type=str, choices=["basic", "medium", "super"],
                    default="basic",
                    help="define the type of CNN to use")
 
@@ -115,10 +132,18 @@ if __name__ == "__main__":
     if args.reset_model:
         if args.model_type == "basic":
             model = generate_super_reso_basic_model(INPUT_DIM, SUPER_DIM)
-        if args.model_type == "medium":
+        elif args.model_type == "medium":
             model = generate_super_reso_medium_model(INPUT_DIM + (3, ), SUPER_DIM + (3, ))
+        elif args.model_type == "super":
+            upscale_factor = SUPER_DIM[0] / INPUT_DIM[0]
+            model = generate_super_reso_model(upscale_factor, channels=3)
         else:
             raise NotImplementedError
+
+        model.compile(loss=keras.losses.MeanSquaredError(),
+                    metrics=["cosine_similarity"],
+                    optimizer=keras.optimizers.Adam(learning_rate=0.001))
+                    # optimizer=keras.optimizers.RMSprop())
 
     else:
         model = keras.models.load_model(args.model_path)
@@ -126,6 +151,43 @@ if __name__ == "__main__":
     # plotting model
     # TODO/FIXME: error on graphviz/pydot import
     keras.utils.plot_model(model, 'colouring_model.png', show_shapes=True)
+
+
+    def evalOnImg(input_img, label="eval"):
+        # random_expected, random_input = random.choice(sample_array)
+        color_img = cv2.imread(input_img)
+        input_img = cv2.resize(color_img, INPUT_DIM)
+        super_img = cv2.resize(color_img, SUPER_DIM)
+
+        # reshape_input = gray_img.reshape((3,) + INPUT_DIM)
+        reshape_input = input_img.reshape((1,) + INPUT_DIM + (3,))
+        model_prediction = model.predict(reshape_input)
+        print("prediction's shape: ", model_prediction.shape, model_prediction.dtype)
+        predicted_image = model_prediction.reshape(SUPER_DIM + (3,))
+        print("color_img's shape: ", color_img.shape, color_img.dtype)
+        print("predicted_image's shape: ", predicted_image.shape, predicted_image.dtype)
+        print("predicted_image's range", np.amax(predicted_image), np.amin(predicted_image))
+        predicted_image_u8 = predicted_image.astype('uint8')
+        print("predicted_image_u8's range", np.amax(predicted_image_u8), np.amin(predicted_image_u8))
+        print("predicted_image's shape: ", predicted_image.shape)
+
+        cv2.imwrite("input_small-image.png", input_img)
+        cv2.imwrite(f"super-resolution-{label}.png", predicted_image)
+
+        # # evaluation logging
+        # logdir_eval = "logs/eval_data/" + datetime.now().strftime("%Y%m%d-%H%M%S")
+        # file_writer_eval = tf.summary.create_file_writer(logdir_eval)
+
+        # ext_input = np.repeat(gray_img, 3).reshape(COLOR_DIM)
+        # print("ext_input's shape: ", ext_input.shape, ext_input.dtype)
+
+        # img_stack = np.stack([ext_input, color_img[...,::-1], predicted_image.astype('uint8')[...,::-1]])
+        # print("img_stack's properties: ", img_stack.shape, img_stack.dtype, np.amax(img_stack), np.amin(img_stack))
+        # img_stack = img_stack.astype('float32') / 255.0
+        # print("img_stack's properties: ", img_stack.shape, img_stack.dtype, np.amax(img_stack), np.amin(img_stack))
+        # with file_writer_eval.as_default():
+        #     tf.summary.image("evaluation results", img_stack, step=0)
+        return predicted_image
 
 
     if args.shuffle_dataset:
@@ -163,10 +225,12 @@ if __name__ == "__main__":
             with file_writer_valid.as_default():
                 tf.summary.image("validation results", epoch_predictions, step=epoch)
 
+            evalOnImg(args.eval_on_img, label=f"training_eval-epock{epoch}")
+
         valid_state_callback = keras.callbacks.LambdaCallback(on_epoch_end=log_valid_state)
 
         history = model.fit(x_train, y_train,
-                            batch_size=16,
+                            batch_size=args.batch_size,
                             epochs=args.train,
                             validation_split=0.05,
                             # verbose=0,
@@ -183,40 +247,4 @@ if __name__ == "__main__":
     keras.models.save_model(model, args.model_path)
 
     if not args.eval_on_img is None:
-        # random_expected, random_input = random.choice(sample_array)
-        color_img = cv2.imread(args.eval_on_img)
-        input_img = cv2.resize(color_img, INPUT_DIM)
-        super_img = cv2.resize(color_img, SUPER_DIM)
-        gray_img = cv2.cvtColor(color_img, cv2.COLOR_BGR2GRAY)
-
-        # reshape_input = gray_img.reshape((3,) + INPUT_DIM)
-        reshape_input = input_img.reshape((1,) + INPUT_DIM + (3,))
-        model_prediction = model.predict(reshape_input)
-        print("prediction's shape: ", model_prediction.shape, model_prediction.dtype)
-        predicted_image = model_prediction.reshape(SUPER_DIM + (3,))
-        print("color_img's shape: ", color_img.shape, color_img.dtype)
-        print("predicted_image's shape: ", predicted_image.shape, predicted_image.dtype)
-        print("predicted_image's range", np.amax(predicted_image), np.amin(predicted_image))
-        predicted_image_u8 = predicted_image.astype('uint8')
-        print("predicted_image_u8's range", np.amax(predicted_image_u8), np.amin(predicted_image_u8))
-        print("predicted_image's shape: ", predicted_image.shape)
-
-
-
-        cv2.imwrite("input_small-image.png", input_img)
-        cv2.imwrite("predicted_super-image.png", predicted_image)
-
-        # # evaluation logging
-        # logdir_eval = "logs/eval_data/" + datetime.now().strftime("%Y%m%d-%H%M%S")
-        # file_writer_eval = tf.summary.create_file_writer(logdir_eval)
-
-        # ext_input = np.repeat(gray_img, 3).reshape(COLOR_DIM)
-        # print("ext_input's shape: ", ext_input.shape, ext_input.dtype)
-
-        # img_stack = np.stack([ext_input, color_img[...,::-1], predicted_image.astype('uint8')[...,::-1]])
-        # print("img_stack's properties: ", img_stack.shape, img_stack.dtype, np.amax(img_stack), np.amin(img_stack))
-        # img_stack = img_stack.astype('float32') / 255.0
-        # print("img_stack's properties: ", img_stack.shape, img_stack.dtype, np.amax(img_stack), np.amin(img_stack))
-        # with file_writer_eval.as_default():
-        #     tf.summary.image("evaluation results", img_stack, step=0)
-
+        evalOnImg(args.eval_on_img, args.eval_output)
