@@ -15,13 +15,9 @@ from tensorflow import keras
 from tensorflow.keras import layers
 import tensorflow as tf
 
-from medium_model import generate_medium_model
+from medium_model import generate_coloring_medium_model
 
 # loading images
-
-# Load an color image in grayscale
-# img = cv2.imread('messi5.jpg',0)
-
 def load_samples(dataset_path, resized_dim=(128, 128), size=100):
     color_dataset_path = os.path.join(dataset_path, "color")
     gray_dataset_path = os.path.join(dataset_path, "gray")
@@ -113,9 +109,9 @@ if __name__ == "__main__":
 
     if args.reset_model:
         if args.model_type == "basic":
-            model = generate_basic_model(GRAY_DIM)
+            model = generate_coloring_basic_model(GRAY_DIM)
         elif args.model_type == "medium":
-            model = generate_medium_model(GRAY_DIM)
+            model = generate_coloring_medium_model(GRAY_DIM)
             assert args.model_path != "colouring_model.model", "model path as not been overloaded"
         else:
             raise NotImplementedError
