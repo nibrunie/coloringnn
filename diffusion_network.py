@@ -18,6 +18,9 @@ from tensorflow import keras
 from keras import layers
 import tensorflow as tf
 
+from tensorflow.python.ops.numpy_ops import np_config
+np_config.enable_numpy_behavior()
+
 # developped from https://keras.io/examples/generative/ddim/
 
 # loading images
@@ -394,20 +397,22 @@ class DiffusionModel(keras.Model):
             num_images=num_rows * num_cols,
             diffusion_steps=plot_diffusion_steps,
         )
-
-        plt.figure(figsize=(num_cols * 2.0, num_rows * 2.0))
-        for row in range(num_rows):
-            for col in range(num_cols):
-                index = row * num_cols + col
-                plt.subplot(num_rows, num_cols, index + 1)
-                plt.imshow(generated_images[index])
-                plt.axis("off")
-        plt.tight_layout()
         if saveFile:
-            plt.savefig(saveFile)
+            for i, img in enumerate(generated_images):
+                predicted_image = img.reshape((self.image_size, self.image_size) + (3,))
+                cv2.imwrite(f"{saveFile}-{i}.png", (predicted_image.numpy() * 256).astype("uint8"))
+
         else:
+            plt.figure(figsize=(num_cols * 2.0, num_rows * 2.0))
+            for row in range(num_rows):
+                for col in range(num_cols):
+                    index = row * num_cols + col
+                    plt.subplot(num_rows, num_cols, index + 1)
+                    plt.imshow(generated_images[index])
+                    plt.axis("off")
+            plt.tight_layout()
             plt.show()
-        plt.close()
+            plt.close()
 
 
 
@@ -527,7 +532,7 @@ if __name__ == "__main__":
         )
         model.plot_images()
         for i in range(args.plot_images):
-            model.plot_images(saveFile=f"hallucinated-landscape-{i}.jpg")
+            model.plot_images(saveFile=f"hallucinated-landscape-{i}")
 
 
     if args.print_model_summary:
