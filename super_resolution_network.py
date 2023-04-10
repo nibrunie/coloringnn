@@ -18,24 +18,24 @@ import tensorflow as tf
 
 from medium_model import generate_super_reso_medium_model
 
-# loading images
 
 def load_dataset(dataset_path, resized_dim=(128, 128), super_size=(256, 256), size=100):
+    """ load a training dataset for the super-resolution networks """
     color_dataset_path = os.path.join(dataset_path, "color")
     super_dataset_path = os.path.join(dataset_path, "super")
 
     color_images = [f for f in listdir(color_dataset_path) if isfile(join(color_dataset_path, f))]
     super_images = [f for f in listdir(super_dataset_path) if isfile(join(super_dataset_path, f))]
 
-    print("{} color image(s) / {} super image(s)".format(len(color_images), len(super_images)))
+    print("dataset: {} color image(s) / {} super image(s)".format(len(color_images), len(super_images)))
 
+    # list of (src data, super-sized output) pairs
     sample_array = []
 
     for img_name in color_images[:size]:
         color_path = os.path.join(color_dataset_path, img_name)
         super_path = os.path.join(super_dataset_path, img_name)
         if isfile(color_path) and isfile(super_path):
-            print("found matching input and expected {}".format(img_name))
             color_img = cv2.imread(color_path)
             super_img = cv2.imread(super_path)
             color_img = cv2.resize(color_img, resized_dim)
@@ -45,7 +45,8 @@ def load_dataset(dataset_path, resized_dim=(128, 128), super_size=(256, 256), si
 
     return sample_array
 
-def generate_super_reso_model(upscale_factor=4, channels=1):
+def generate_super_reso_simple_model(upscale_factor=4, channels=1):
+    """ generate a simple super-resolution model """
     # copied from https://keras.io/examples/vision/super_resolution_sub_pixel/
     conv_args = {
         "activation": "relu",
@@ -53,11 +54,12 @@ def generate_super_reso_model(upscale_factor=4, channels=1):
         "padding": "same",
     }
     inputs = keras.Input(shape=(None, None, channels))
-    x = layers.Conv2D(64, 5, **conv_args)(inputs)
-    x = layers.Conv2D(64, 3, **conv_args)(x)
-    x = layers.Conv2D(32, 3, **conv_args)(x)
+    x = layers.Conv2D(64, 9, **conv_args)(inputs)
+    x = layers.Conv2D(64, 7, **conv_args)(x)
+    x = layers.Conv2D(32, 5, **conv_args)(x)
     x = layers.Conv2D(channels * (upscale_factor ** 2), 3, **conv_args)(x)
     outputs = tf.nn.depth_to_space(x, upscale_factor)
+    outputs = layers.Conv2D(channels, 7, **conv_args)(outputs)
 
     return keras.Model(inputs, outputs)
 
@@ -79,7 +81,6 @@ def generate_super_reso_basic_model(INPUT_DIM=(64, 64), SUPER_DIM=(512, 512)):
     outputs = layers.Add()([x, outputs])
     outputs = layers.Conv2D(3, 1, activation='relu', name="final_conv2d")(outputs)
     model = keras.Model(inputs=inputs, outputs=outputs)
-
 
     return model
 
@@ -113,7 +114,7 @@ if __name__ == "__main__":
     parser.add_argument("--super-size",
                         type=(lambda s: tuple(map(int, s.split(',')))), default=(256, 256),
                         help="dataset output dimension (super size)")
-    parser.add_argument("--model-type", type=str, choices=["basic", "medium", "super"],
+    parser.add_argument("--model-type", type=str, choices=["basic", "medium", "simple"],
                    default="basic",
                    help="define the type of CNN to use")
 
@@ -134,16 +135,15 @@ if __name__ == "__main__":
             model = generate_super_reso_basic_model(INPUT_DIM, SUPER_DIM)
         elif args.model_type == "medium":
             model = generate_super_reso_medium_model(INPUT_DIM + (3, ), SUPER_DIM + (3, ))
-        elif args.model_type == "super":
+        elif args.model_type == "simple":
             upscale_factor = SUPER_DIM[0] / INPUT_DIM[0]
-            model = generate_super_reso_model(upscale_factor, channels=3)
+            model = generate_super_reso_simple_model(upscale_factor, channels=3)
         else:
             raise NotImplementedError
 
         model.compile(loss=keras.losses.MeanSquaredError(),
                     metrics=["cosine_similarity"],
                     optimizer=keras.optimizers.Adam(learning_rate=0.001))
-                    # optimizer=keras.optimizers.RMSprop())
 
     else:
         model = keras.models.load_model(args.model_path)
